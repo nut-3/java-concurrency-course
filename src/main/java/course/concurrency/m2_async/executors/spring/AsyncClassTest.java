@@ -20,9 +20,10 @@ public class AsyncClassTest {
     @Async
     public void runAsyncTask() {
         System.out.println("runAsyncTask: " + Thread.currentThread().getName());
-        internalTask();
+        ((AsyncClassTest) context.getBean("asyncClassTest")).internalTask();
     }
 
+    @Async
     public void internalTask() {
         System.out.println("internalTask: " + Thread.currentThread().getName());
     }
