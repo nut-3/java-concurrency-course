@@ -4,11 +4,9 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public class PriceAggregator {
 
@@ -27,15 +25,14 @@ public class PriceAggregator {
 
     public double getMinPrice(long itemId) {
         var futures = shopIds.stream()
-                .map(shopId -> CompletableFuture.supplyAsync(() -> priceRetriever.getPrice(itemId, shopId), EXECUTOR))
+                .map(shopId -> CompletableFuture.supplyAsync(() -> priceRetriever.getPrice(itemId, shopId), EXECUTOR)
+                        .exceptionally(th -> Double.NaN)
+                        .completeOnTimeout(Double.NaN, 2_900, TimeUnit.MILLISECONDS))
                 .toArray(CompletableFuture[]::new);
-        try {
-            CompletableFuture.allOf(futures).get(2_900, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException ignored) {
-        }
+        CompletableFuture.allOf(futures).join();
         return Arrays.stream(futures)
-                .filter(future -> future.isDone() && !future.isCompletedExceptionally())
                 .map(future -> (Double) future.join())
+                .filter(res -> !Double.isNaN(res))
                 .min(Double::compareTo)
                 .orElse(Double.NaN);
     }
