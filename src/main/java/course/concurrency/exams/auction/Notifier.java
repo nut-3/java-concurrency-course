@@ -2,7 +2,6 @@ package course.concurrency.exams.auction;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 public class Notifier {
 
@@ -20,10 +19,6 @@ public class Notifier {
     }
 
     public void shutdown() {
-        try {
-            executor.awaitTermination(5, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {
-        }
         executor.shutdownNow();
     }
 }
