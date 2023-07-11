@@ -12,8 +12,7 @@ public class AuctionPessimistic implements Auction {
     private volatile Bid latestBid;
 
     public boolean propose(Bid bid) {
-        if (latestBid == null) {
-            initializeBid(bid);
+        if (latestBid == null && initializeBid(bid)) {
             return true;
         }
         if (bid.getPrice() > latestBid.getPrice() && updateBid(bid)) {
@@ -27,13 +26,14 @@ public class AuctionPessimistic implements Auction {
         return latestBid;
     }
 
-    private void initializeBid(Bid bid) {
+    private boolean initializeBid(Bid bid) {
         synchronized (lock) {
             if (latestBid == null) {
                 latestBid = bid;
+                return true;
             }
+            return false;
         }
-
     }
 
     private boolean updateBid(Bid bid) {
