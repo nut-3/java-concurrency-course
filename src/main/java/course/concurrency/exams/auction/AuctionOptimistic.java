@@ -14,7 +14,9 @@ public class AuctionOptimistic implements Auction {
 
     public boolean propose(Bid bid) {
         boolean bidSuccessful = true;
-        latestBid.compareAndSet(null, bid, 0, 1);
+        if (latestBid.compareAndSet(null, bid, 0, 1)) {
+            return true;
+        }
         int[] stamp = new int[1];
         Bid prev;
         do {
