@@ -18,17 +18,19 @@ public class AuctionStoppableOptimistic implements AuctionStoppable {
             return false;
         }
         Bid prev;
-        boolean[] mark = new boolean[1];
         do {
-            prev = latestBid.get(mark);
-            if (mark[0] || bid.getPrice() <= prev.getPrice()) {
+            prev = latestBid.getReference();
+            if (latestBid.isMarked() || bid.getPrice() <= prev.getPrice()) {
                 return false;
             }
         } while (!latestBid.compareAndSet(prev, bid, false, false));
-        if (!mark[0]) {
-            notifier.sendOutdatedMessage(prev);
-        }
-        return !mark[0];
+        notifier.sendOutdatedMessage(prev);
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        return super.toString();
     }
 
     public Bid getLatestBid() {
