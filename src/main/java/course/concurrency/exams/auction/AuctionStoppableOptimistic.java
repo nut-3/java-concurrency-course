@@ -4,9 +4,11 @@ import java.util.concurrent.atomic.AtomicMarkableReference;
 
 public class AuctionStoppableOptimistic implements AuctionStoppable {
 
-    private Notifier notifier;
+    private final Notifier notifier;
     private final AtomicMarkableReference<Bid> latestBid =
             new AtomicMarkableReference<>(new Bid(-1L, null, -1L), false);
+    private final Object lock = new Object();
+    private volatile boolean stopInitiated = false;
 
     public AuctionStoppableOptimistic(Notifier notifier) {
         this.notifier = notifier;
@@ -17,13 +19,17 @@ public class AuctionStoppableOptimistic implements AuctionStoppable {
         if (latestBid.isMarked()) {
             return false;
         }
+
         Bid prev;
-        do {
-            prev = latestBid.getReference();
-            if (latestBid.isMarked() || bid.getPrice() <= prev.getPrice()) {
-                return false;
-            }
-        } while (!latestBid.compareAndSet(prev, bid, false, false));
+        synchronized (stopInitiated ? lock : new Object()) {
+            do {
+                prev = latestBid.getReference();
+                if (latestBid.isMarked() || bid.getPrice() <= prev.getPrice()) {
+                    return false;
+                }
+            } while (!latestBid.compareAndSet(prev, bid, false, false));
+        }
+
         notifier.sendOutdatedMessage(prev);
         return true;
     }
@@ -38,11 +44,18 @@ public class AuctionStoppableOptimistic implements AuctionStoppable {
     }
 
     public Bid stopAuction() {
-        notifier.shutdown();
-        Bid prev;
-        do {
-            prev = latestBid.getReference();
-        } while (!latestBid.attemptMark(prev, true));
-        return prev;
+        stopInitiated = true;
+        try {
+            synchronized (lock) {
+                notifier.shutdown();
+                Bid prev;
+                do {
+                    prev = latestBid.getReference();
+                } while (!latestBid.attemptMark(prev, true));
+                return prev;
+            }
+        } finally {
+            stopInitiated = false;
+        }
     }
 }
