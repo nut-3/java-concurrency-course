@@ -1,4 +1,8 @@
 package course.concurrency.m3_shared.immutable;
 
-public class Item {
+public final class Item {
+
+    public Item copy() {
+        return new Item();
+    }
 }
