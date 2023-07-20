@@ -6,10 +6,11 @@ import java.util.stream.Collectors;
 
 import static course.concurrency.m3_shared.immutable.Order.Status.DELIVERED;
 import static course.concurrency.m3_shared.immutable.Order.Status.NEW;
+import static course.concurrency.m3_shared.immutable.Order.Status.SENT;
 
 public final class Order {
 
-    public enum Status {NEW, IN_PROGRESS, DELIVERED}
+    public enum Status {NEW, IN_PROGRESS, SENT, DELIVERED}
 
     private final long id;
     private final List<Item> items;
@@ -33,7 +34,8 @@ public final class Order {
         return !items.isEmpty()
                 && paymentInfo != null
                 && isPacked
-                && !DELIVERED.equals(status);
+                && !DELIVERED.equals(status)
+                && !SENT.equals(status);
     }
 
     public long getId() {

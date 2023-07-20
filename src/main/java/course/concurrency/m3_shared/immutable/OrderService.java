@@ -4,19 +4,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
 
 public class OrderService {
 
     private final Map<Long, Order> currentOrders = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong();
-    private final Map<Long, ReentrantLock> deliveryLocks = new ConcurrentHashMap<>();
 
     public long createOrder(List<Item> items) {
         long id = nextId.getAndIncrement();
         Order order = new Order(id, items);
-        deliveryLocks.put(id, new ReentrantLock());
         currentOrders.put(id, order);
         return id;
     }
@@ -30,15 +27,9 @@ public class OrderService {
     }
 
     private <T> void modifyOrder(long orderId, BiFunction<Order, T, Order> operation, T parameter) {
-        Order modifiedOrder = currentOrders.computeIfPresent(orderId, (id, order) -> operation.apply(order, parameter));
-        if (modifiedOrder != null && modifiedOrder.checkStatus()) {
-            ReentrantLock lock = deliveryLocks.get(orderId);
-            lock.lock();
-            Order orderToDeliver = currentOrders.get(orderId);
-            if (orderToDeliver.checkStatus()) {
-                deliver(orderToDeliver);
-            }
-            lock.unlock();
+        currentOrders.computeIfPresent(orderId, (id, order) -> operation.apply(order, parameter));
+        if (currentOrders.get(orderId).checkStatus()) {
+            deliver(currentOrders.compute(orderId, (id, order) -> order.withStatus(Order.Status.SENT)));
         }
     }
 
