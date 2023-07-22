@@ -27,8 +27,8 @@ public class OrderService {
     }
 
     private <T> void modifyOrder(long orderId, BiFunction<Order, T, Order> operation, T parameter) {
-        currentOrders.computeIfPresent(orderId, (id, order) -> operation.apply(order, parameter));
-        if (currentOrders.get(orderId).checkStatus()) {
+        if (currentOrders.computeIfPresent(orderId, (id, order) -> operation.apply(order, parameter))
+                .checkStatus()) {
             deliver(currentOrders.compute(orderId, (id, order) -> order.withStatus(Order.Status.SENT)));
         }
     }
