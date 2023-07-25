@@ -33,9 +33,11 @@ public final class Order {
     public boolean checkStatus() {
         return !items.isEmpty()
                 && paymentInfo != null
-                && isPacked
-                && !DELIVERED.equals(status)
-                && !SENT.equals(status);
+                && isPacked;
+    }
+
+    public boolean isSent() {
+        return DELIVERED.equals(status) || SENT.equals(status);
     }
 
     public long getId() {
