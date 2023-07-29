@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ThreadPoolTaskTests {
 
@@ -87,3 +88,4 @@ public class ThreadPoolTaskTests {
             assertTrue(expectedResult.contains(processedElement), "Processed element is not as expected");
         }
     }
+}
