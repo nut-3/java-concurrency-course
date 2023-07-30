@@ -1,7 +1,7 @@
 package course.concurrency.m5_streams;
 
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedTransferQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -21,13 +21,7 @@ public class ThreadPoolTask {
     // Task #2
     public ThreadPoolExecutor getRejectExecutor() {
         return new ThreadPoolExecutor(8, 8, 0, TimeUnit.SECONDS,
-                new LinkedTransferQueue<>() {
-
-                    @Override
-                    public boolean offer(Runnable runnable) {
-                        return super.tryTransfer(runnable);
-                    }
-                },
+                new SynchronousQueue<>(),
                 (r, executor) -> {
                     //NO-OP
                 });
