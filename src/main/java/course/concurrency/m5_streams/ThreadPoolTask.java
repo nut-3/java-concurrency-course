@@ -22,8 +22,6 @@ public class ThreadPoolTask {
     public ThreadPoolExecutor getRejectExecutor() {
         return new ThreadPoolExecutor(8, 8, 0, TimeUnit.SECONDS,
                 new SynchronousQueue<>(),
-                (r, executor) -> {
-                    //NO-OP
-                });
+                new ThreadPoolExecutor.DiscardPolicy());
     }
 }
