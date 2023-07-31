@@ -1,12 +1,24 @@
 package course.concurrency.exams.refactoring;
 
-import java.util.ArrayList;
+import org.springframework.util.StringUtils;
+
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 
 public class MountTableRefresherService {
 
+    private final AtomicBoolean cacheUpdateInProgressIndicator = new AtomicBoolean();
+    private final ExecutorService mountTableRefreshExecutor = Executors.newCachedThreadPool();
     private Others.RouterStore routerStore = new Others.RouterStore();
     private long cacheUpdateTimeout;
 
@@ -22,7 +34,7 @@ public class MountTableRefresherService {
      */
     private ScheduledExecutorService clientCacheCleanerScheduler;
 
-    public void serviceInit()  {
+    public void serviceInit() {
         long routerClientMaxLiveTime = 15L;
         this.cacheUpdateTimeout = 10L;
         routerClientsCache = new Others.LoadingCache<String, Others.RouterClient>();
@@ -63,61 +75,61 @@ public class MountTableRefresherService {
     /**
      * Refresh mount table cache of this router as well as all other routers.
      */
-    public void refresh()  {
-
-        List<Others.RouterState> cachedRecords = routerStore.getCachedRecords();
-        List<MountTableRefresherThread> refreshThreads = new ArrayList<>();
-        for (Others.RouterState routerState : cachedRecords) {
-            String adminAddress = routerState.getAdminAddress();
-            if (adminAddress == null || adminAddress.length() == 0) {
-                // this router has not enabled router admin.
-                continue;
-            }
-            if (isLocalAdmin(adminAddress)) {
-                /*
-                 * Local router's cache update does not require RPC call, so no need for
-                 * RouterClient
-                 */
-                refreshThreads.add(getLocalRefresher(adminAddress));
-            } else {
-                refreshThreads.add(new MountTableRefresherThread(
-                            new Others.MountTableManager(adminAddress), adminAddress));
-            }
+    public void refresh() {
+        if (!cacheUpdateInProgressIndicator.compareAndSet(false, true)) {
+            return;
         }
-        if (!refreshThreads.isEmpty()) {
-            invokeRefresh(refreshThreads);
+        try {
+            List<MountTableRefresherThread> refreshThreads = routerStore.getCachedRecords().stream()
+                    .map(Others.RouterState::getAdminAddress)
+                    .filter(StringUtils::hasText)
+                    .map(this::getRefresher)
+                    .collect(Collectors.toUnmodifiableList());
+            if (!refreshThreads.isEmpty()) {
+                invokeRefresh(refreshThreads);
+            }
+        } finally {
+            cacheUpdateInProgressIndicator.set(false);
         }
     }
 
-    protected MountTableRefresherThread getLocalRefresher(String adminAddress) {
-        return new MountTableRefresherThread(new Others.MountTableManager("local"), adminAddress);
+    protected MountTableRefresherThread getRefresher(String adminAddress) {
+        return new MountTableRefresherThread(getManager(adminAddress), adminAddress);
+    }
+
+    protected Others.MountTableManager getManager(String adminAddress) {
+        if (isLocalAdmin(adminAddress)) {
+            return new Others.MountTableManager("local");
+        }
+        return new Others.MountTableManager(adminAddress);
     }
 
     private void removeFromCache(String adminAddress) {
         routerClientsCache.invalidate(adminAddress);
     }
 
-    private void invokeRefresh(List<MountTableRefresherThread> refreshThreads) {
-        CountDownLatch countDownLatch = new CountDownLatch(refreshThreads.size());
-        // start all the threads
-        for (MountTableRefresherThread refThread : refreshThreads) {
-            refThread.setCountDownLatch(countDownLatch);
-            refThread.start();
-        }
+    protected void invokeRefresh(List<MountTableRefresherThread> refreshThreads) {
+        log("invokeRefresh start");
         try {
-            /*
-             * Wait for all the thread to complete, await method returns false if
-             * refresh is not finished within specified time
-             */
-            boolean allReqCompleted =
-                    countDownLatch.await(cacheUpdateTimeout, TimeUnit.MILLISECONDS);
-            if (!allReqCompleted) {
-                log("Not all router admins updated their cache");
+            CompletableFuture.allOf(refreshThreads.stream()
+                            .map(this::threadToFuture)
+                            .toArray(CompletableFuture[]::new))
+                    .get();
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof TimeoutException) {
+                log("Some cache updates timed out");
+            } else {
+                log("Some cache updates completed with error");
             }
         } catch (InterruptedException e) {
             log("Mount table cache refresher was interrupted.");
         }
         logResult(refreshThreads);
+    }
+
+    protected CompletableFuture<Void> threadToFuture(MountTableRefresherThread thread) {
+        return CompletableFuture.runAsync(thread, mountTableRefreshExecutor)
+                .orTimeout(cacheUpdateTimeout, TimeUnit.MILLISECONDS);
     }
 
     private boolean isLocalAdmin(String adminAddress) {
@@ -148,6 +160,7 @@ public class MountTableRefresherService {
     public void setCacheUpdateTimeout(long cacheUpdateTimeout) {
         this.cacheUpdateTimeout = cacheUpdateTimeout;
     }
+
     public void setRouterClientsCache(Others.LoadingCache cache) {
         this.routerClientsCache = cache;
     }
