@@ -144,8 +144,7 @@ public class MountTableRefresherServiceTests {
                 return CompletableFuture.failedFuture(new RuntimeException());
             }
             return invocationOnMock.callRealMethod();
-        })
-                .when(mockedService).threadToFuture(notNull());
+        }).when(mockedService).refresherToFuture(notNull());
 
         // when
         mockedService.refresh();
@@ -184,8 +183,7 @@ public class MountTableRefresherServiceTests {
                         .orTimeout(1, TimeUnit.MILLISECONDS);
             }
             return invocationOnMock.callRealMethod();
-        })
-                .when(mockedService).threadToFuture(notNull());
+        }).when(mockedService).refresherToFuture(notNull());
 
         // when
         mockedService.refresh();

@@ -12,13 +12,22 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 
 public class MountTableRefresherService {
 
+    private final AtomicLong threadCounter = new AtomicLong();
+    private final ExecutorService mountTableRefresherExecutor = Executors.newFixedThreadPool(
+            Runtime.getRuntime().availableProcessors(),
+            runnable -> {
+                Thread thread = new Thread(runnable);
+                thread.setName("MountTableRefresh_" + threadCounter.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            });
     private final AtomicBoolean cacheUpdateInProgressIndicator = new AtomicBoolean();
-    private final ExecutorService mountTableRefreshExecutor = Executors.newCachedThreadPool();
     private Others.RouterStore routerStore = new Others.RouterStore();
     private long cacheUpdateTimeout;
 
@@ -51,14 +60,11 @@ public class MountTableRefresherService {
     }
 
     private void initClientCacheCleaner(long routerClientMaxLiveTime) {
-        ThreadFactory tf = new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable r) {
-                Thread t = new Thread();
-                t.setName("MountTableRefresh_ClientsCacheCleaner");
-                t.setDaemon(true);
-                return t;
-            }
+        ThreadFactory tf = runnable -> {
+            Thread t = new Thread(runnable);
+            t.setName("MountTableRefresh_ClientsCacheCleaner");
+            t.setDaemon(true);
+            return t;
         };
 
         clientCacheCleanerScheduler =
@@ -80,21 +86,21 @@ public class MountTableRefresherService {
             return;
         }
         try {
-            List<MountTableRefresherThread> refreshThreads = routerStore.getCachedRecords().stream()
+            List<MountTableRefresher> refreshers = routerStore.getCachedRecords().stream()
                     .map(Others.RouterState::getAdminAddress)
                     .filter(StringUtils::hasText)
                     .map(this::getRefresher)
                     .collect(Collectors.toUnmodifiableList());
-            if (!refreshThreads.isEmpty()) {
-                invokeRefresh(refreshThreads);
+            if (!refreshers.isEmpty()) {
+                invokeRefresh(refreshers);
             }
         } finally {
             cacheUpdateInProgressIndicator.set(false);
         }
     }
 
-    protected MountTableRefresherThread getRefresher(String adminAddress) {
-        return new MountTableRefresherThread(getManager(adminAddress), adminAddress);
+    protected MountTableRefresher getRefresher(String adminAddress) {
+        return new MountTableRefresher(getManager(adminAddress), adminAddress);
     }
 
     protected Others.MountTableManager getManager(String adminAddress) {
@@ -108,11 +114,10 @@ public class MountTableRefresherService {
         routerClientsCache.invalidate(adminAddress);
     }
 
-    protected void invokeRefresh(List<MountTableRefresherThread> refreshThreads) {
-        log("invokeRefresh start");
+    protected void invokeRefresh(List<MountTableRefresher> refreshers) {
         try {
-            CompletableFuture.allOf(refreshThreads.stream()
-                            .map(this::threadToFuture)
+            CompletableFuture.allOf(refreshers.stream()
+                            .map(this::refresherToFuture)
                             .toArray(CompletableFuture[]::new))
                     .get();
         } catch (ExecutionException e) {
@@ -124,11 +129,11 @@ public class MountTableRefresherService {
         } catch (InterruptedException e) {
             log("Mount table cache refresher was interrupted.");
         }
-        logResult(refreshThreads);
+        logResult(refreshers);
     }
 
-    protected CompletableFuture<Void> threadToFuture(MountTableRefresherThread thread) {
-        return CompletableFuture.runAsync(thread, mountTableRefreshExecutor)
+    protected CompletableFuture<Void> refresherToFuture(MountTableRefresher refresher) {
+        return CompletableFuture.runAsync(refresher::refresh, mountTableRefresherExecutor)
                 .orTimeout(cacheUpdateTimeout, TimeUnit.MILLISECONDS);
     }
 
@@ -136,16 +141,16 @@ public class MountTableRefresherService {
         return adminAddress.contains("local");
     }
 
-    private void logResult(List<MountTableRefresherThread> refreshThreads) {
+    private void logResult(List<MountTableRefresher> refreshers) {
         int successCount = 0;
         int failureCount = 0;
-        for (MountTableRefresherThread mountTableRefreshThread : refreshThreads) {
-            if (mountTableRefreshThread.isSuccess()) {
+        for (MountTableRefresher mountTableRefresher : refreshers) {
+            if (mountTableRefresher.isSuccess()) {
                 successCount++;
             } else {
                 failureCount++;
                 // remove RouterClient from cache so that new client is created
-                removeFromCache(mountTableRefreshThread.getAdminAddress());
+                removeFromCache(mountTableRefresher.getAdminAddress());
             }
         }
         log(String.format(

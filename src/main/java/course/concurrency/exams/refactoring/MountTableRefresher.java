@@ -2,21 +2,19 @@ package course.concurrency.exams.refactoring;
 
 import static course.concurrency.exams.refactoring.Others.MountTableManager;
 
-public class MountTableRefresherThread extends Thread {
+public class MountTableRefresher {
 
     /**
      * Admin server on which refreshed to be invoked.
      */
     private final String adminAddress;
     private final MountTableManager manager;
-    private boolean success;
+    private volatile boolean success;
 
-    public MountTableRefresherThread(MountTableManager manager,
-                                     String adminAddress) {
+    public MountTableRefresher(MountTableManager manager,
+                               String adminAddress) {
         this.manager = manager;
         this.adminAddress = adminAddress;
-        setName("MountTableRefresh_" + adminAddress);
-        setDaemon(true);
     }
 
     /**
@@ -31,8 +29,7 @@ public class MountTableRefresherThread extends Thread {
      * cache locally it need not to make RPC call. But R1 will make RPC calls to
      * update cache on R2 and R3.
      */
-    @Override
-    public void run() {
+    public void refresh() {
         success = manager.refresh();
     }
 
