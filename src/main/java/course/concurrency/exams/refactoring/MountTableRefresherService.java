@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 
@@ -27,7 +28,7 @@ public class MountTableRefresherService {
                 thread.setDaemon(true);
                 return thread;
             });
-    private final AtomicBoolean cacheUpdateInProgressIndicator = new AtomicBoolean();
+    private final ReentrantLock cacheUpdateInProgressIndicator = new ReentrantLock();
     private Others.RouterStore routerStore = new Others.RouterStore();
     private long cacheUpdateTimeout;
 
@@ -82,7 +83,7 @@ public class MountTableRefresherService {
      * Refresh mount table cache of this router as well as all other routers.
      */
     public void refresh() {
-        if (!cacheUpdateInProgressIndicator.compareAndSet(false, true)) {
+        if (!cacheUpdateInProgressIndicator.tryLock()) {
             return;
         }
         try {
@@ -95,7 +96,7 @@ public class MountTableRefresherService {
                 invokeRefresh(refreshers);
             }
         } finally {
-            cacheUpdateInProgressIndicator.set(false);
+            cacheUpdateInProgressIndicator.unlock();
         }
     }
 
@@ -120,16 +121,20 @@ public class MountTableRefresherService {
                             .map(this::refresherToFuture)
                             .toArray(CompletableFuture[]::new))
                     .get();
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof TimeoutException) {
-                log("Some cache updates timed out");
-            } else {
-                log("Some cache updates completed with error");
-            }
-        } catch (InterruptedException e) {
-            log("Mount table cache refresher was interrupted.");
+        } catch (ExecutionException | InterruptedException e) {
+            logError(e);
         }
         logResult(refreshers);
+    }
+
+    private void logError(Exception e) {
+        if (e.getCause() instanceof TimeoutException) {
+            log("Some cache updates timed out");
+        } else if (e.getCause() instanceof InterruptedException) {
+            log("Mount table cache refresher was interrupted.");
+        } else {
+            log("Some cache updates completed with error");
+        }
     }
 
     protected CompletableFuture<Void> refresherToFuture(MountTableRefresher refresher) {

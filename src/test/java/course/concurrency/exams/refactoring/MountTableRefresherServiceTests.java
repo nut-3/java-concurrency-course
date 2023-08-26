@@ -5,13 +5,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
@@ -138,13 +138,9 @@ public class MountTableRefresherServiceTests {
         // smth more
         when(mockedService.getManager(anyString())).thenReturn(manager);
 
-        AtomicBoolean exceptionThrown = new AtomicBoolean();
-        doAnswer(invocationOnMock -> {
-            if (exceptionThrown.compareAndSet(false, true)) {
-                return CompletableFuture.failedFuture(new RuntimeException());
-            }
-            return invocationOnMock.callRealMethod();
-        }).when(mockedService).refresherToFuture(notNull());
+        doAnswer(invocationOnMock -> CompletableFuture.failedFuture(new RuntimeException()))
+                .doAnswer(InvocationOnMock::callRealMethod)
+                .when(mockedService).refresherToFuture(notNull());
 
         // when
         mockedService.refresh();
@@ -170,20 +166,17 @@ public class MountTableRefresherServiceTests {
         // smth more
         when(mockedService.getManager(anyString())).thenReturn(manager);
 
-        AtomicBoolean timeoutInitiated = new AtomicBoolean();
-        doAnswer(invocationOnMock -> {
-            if (timeoutInitiated.compareAndSet(false, true)) {
-                return CompletableFuture.runAsync(() -> {
+        doAnswer(invocationOnMock -> CompletableFuture.runAsync(() -> {
                             try {
                                 Thread.sleep(5);
                             } catch (InterruptedException e) {
                                 throw new RuntimeException(e);
                             }
                         })
-                        .orTimeout(1, TimeUnit.MILLISECONDS);
-            }
-            return invocationOnMock.callRealMethod();
-        }).when(mockedService).refresherToFuture(notNull());
+                        .orTimeout(1, TimeUnit.MILLISECONDS)
+        )
+                .doAnswer(InvocationOnMock::callRealMethod)
+                .when(mockedService).refresherToFuture(notNull());
 
         // when
         mockedService.refresh();
